@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -454,6 +455,7 @@ func (rc *RecConn) connect() {
 		if !rc.getNonVerbose() {
 			rc.log(LogValues{Msg: "Dial: start", Url: rc.url})
 		}
+		debug.PrintStack()
 		wsConn, httpResp, err := rc.dialer.Dial(rc.url, rc.reqHeader)
 
 		rc.mu.Lock()
