@@ -62,6 +62,7 @@ type RecConn struct {
 	dialErr           error
 	dialer            *websocket.Dialer
 	keepAliveResponse *keepAliveResponse
+	manualReconnect   bool
 
 	*websocket.Conn
 }
@@ -89,6 +90,16 @@ func (rc *RecConn) handleReconnect() {
 
 // CloseAndReconnect will try to reconnect.
 func (rc *RecConn) CloseAndReconnect() {
+	if !rc.getManualReconnect() {
+		rc.Close()
+		rc.handleReconnect()
+		go rc.connect()
+	}
+}
+
+// ManualCloseAndReconnect will try to reconnect.
+func (rc *RecConn) ManualCloseAndReconnect() {
+	rc.setManualReconnect(true)
 	rc.Close()
 	rc.handleReconnect()
 	go rc.connect()
@@ -130,6 +141,19 @@ func (rc *RecConn) Shutdown(writeWait time.Duration) {
 		rc.log(LogValues{Err: err, Msg: "Shutdown"})
 		rc.Close()
 	}
+}
+
+func (rc *RecConn) getManualReconnect() bool {
+	rc.mu.RLock()
+	defer rc.mu.RUnlock()
+
+	return rc.manualReconnect
+}
+
+func (rc *RecConn) setManualReconnect(v bool) {
+	rc.mu.Lock()
+	rc.manualReconnect = v
+	defer rc.mu.Unlock()
 }
 
 // ReadMessage is a helper method for getting a reader
@@ -469,7 +493,7 @@ func (rc *RecConn) keepAlive() {
 			timeoutOffset := time.Millisecond * 500
 			if time.Since(rc.getKeepAliveResponse().getLastResponse()) > rc.getKeepAliveTimeout()+timeoutOffset {
 				rc.log(LogValues{Err: errors.New("keepalive timeout"), Msg: "Reconnect", Url: rc.url})
-				rc.CloseAndReconnect()
+				rc.ManualCloseAndReconnect()
 				return
 			}
 		}
@@ -486,6 +510,8 @@ func (rc *RecConn) connect() {
 			rc.log(LogValues{Msg: "Dial: start", Url: rc.url})
 		}
 		wsConn, httpResp, err := rc.dialer.Dial(rc.url, rc.reqHeader)
+
+		rc.setManualReconnect(false)
 
 		rc.mu.Lock()
 		rc.Conn = wsConn
